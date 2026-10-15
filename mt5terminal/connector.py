@@ -274,7 +274,20 @@ class MT5DataClient:
         if positions is None:
             return []
 
-        return [pos._asdict() for pos in positions]
+        pos_list = []
+        for pos in positions:
+            p_dict = pos._asdict()
+            # Calculate the exact margin engaged for this position's volume and open price
+            margin = mt5.order_calc_margin(
+                p_dict["type"],  # 0 for BUY, 1 for SELL
+                p_dict["symbol"],
+                p_dict["volume"],
+                p_dict["price_open"],
+            )
+            p_dict["margin"] = margin if margin is not None else 0.0
+            pos_list.append(p_dict)
+
+        return pos_list
 
     def get_pending_orders(self, symbol=None):
         """Retrieve pending orders, optionally filtered by symbol."""

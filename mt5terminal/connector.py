@@ -277,12 +277,19 @@ class MT5DataClient:
         pos_list = []
         for pos in positions:
             p_dict = pos._asdict()
-            # Calculate the exact margin engaged for this position's volume and open price
+
+            # Fetch symbol info to get the contract size
+            sym_info = mt5.symbol_info(p_dict["symbol"])
+            contract_size = sym_info.trade_contract_size if sym_info else 100000.0
+
+            # Calculate Nominal Value: Volume * Contract Size * Current Price
+            p_dict["nominal_value"] = (
+                p_dict["volume"] * contract_size * p_dict["price_current"]
+            )
+
+            # Calculate Exact Margin
             margin = mt5.order_calc_margin(
-                p_dict["type"],  # 0 for BUY, 1 for SELL
-                p_dict["symbol"],
-                p_dict["volume"],
-                p_dict["price_open"],
+                p_dict["type"], p_dict["symbol"], p_dict["volume"], p_dict["price_open"]
             )
             p_dict["margin"] = margin if margin is not None else 0.0
             pos_list.append(p_dict)

@@ -2,7 +2,7 @@ import csv
 import os
 import platform
 import shutil
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -342,3 +342,101 @@ def economic_calendar(request):
             {"error": f"Failed to parse calendar data: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
+
+
+# ----------------------------------------------------------------------------------------
+# Trade Execution & Risk Management
+# ----------------------------------------------------------------------------------------
+
+
+@api_view(["GET"])
+def open_positions(request):
+    """Retrieve all currently open positions."""
+    client = None
+    try:
+        client = MT5DataClient()
+        symbol = request.query_params.get("symbol")  # Optional filter
+        positions = client.get_open_positions(symbol=symbol)
+
+        return Response(
+            {
+                "count": len(positions),
+                "positions": positions,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if client:
+            client.shutdown()
+
+
+@api_view(["POST"])
+def execute_trade(request):
+    """Execute a market BUY or SELL order."""
+    client = None
+    try:
+        data = request.data
+        symbol = data.get("symbol")
+        volume = data.get("volume")
+        order_type_str = data.get("type", "").upper()
+        stop_loss = data.get("stop_loss", 0.0)
+        take_profit = data.get("take_profit", 0.0)
+
+        if not symbol or not volume or not order_type_str:
+            return Response(
+                {"error": "Missing required fields: 'symbol', 'volume', 'type'"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if order_type_str == "BUY":
+            order_type = mt5.ORDER_TYPE_BUY
+        elif order_type_str == "SELL":
+            order_type = mt5.ORDER_TYPE_SELL
+        else:
+            return Response(
+                {"error": "Invalid order type. Must be 'BUY' or 'SELL'"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client = MT5DataClient()
+        result = client.execute_market_order(
+            symbol=symbol,
+            volume=float(volume),
+            order_type=order_type,
+            stop_loss=float(stop_loss),
+            take_profit=float(take_profit),
+        )
+
+        return Response(
+            {"status": "success", "ticket": result.get("order"), "details": result},
+            status=status.HTTP_200_OK,
+        )
+    except RuntimeError as e:
+        # MT5 specific trading errors (e.g., Not enough money)
+        return Response({"error": str(e)}, status=status.HTTP_406_NOT_ACCEPTABLE)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if client:
+            client.shutdown()
+
+
+@api_view(["POST"])
+def flatten_positions(request):
+    """Emergency Panic Button: Closes all open positions."""
+    client = None
+    try:
+        client = MT5DataClient()
+        results = client.flatten_all_positions()
+
+        return Response(
+            {"status": "executed", "summary": results}, status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if client:
+            client.shutdown()

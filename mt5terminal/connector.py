@@ -311,18 +311,25 @@ class MT5DataClient:
                 f"Symbol {symbol} not found or not visible in Market Watch"
             )
 
-        # 1. Normalize Volume (AAPL needs 1.0, Forex needs 0.01)
+        # Normalize Volume (AAPL needs 1.0, Forex needs 0.01)
         v_min = symbol_info.volume_min
         v_step = symbol_info.volume_step
-        # Round the requested volume to the nearest allowed step
-        normalized_volume = max(v_min, round(float(volume) / v_step) * v_step)
 
-        # 2. Dynamically determine the supported filling mode
+        # 1. Safety Check: Don't silently buy 1.0 lots if user asked for 0.01!
+        if float(volume) < v_min:
+            raise ValueError(
+                f"Minimum volume for {symbol} is {v_min}. You requested {volume}."
+            )
+
+        normalized_volume = round(float(volume) / v_step) * v_step
+
+        # 2. Fix the missing attribute bug (Use raw bitwise integers)
+        # 1 = FOK, 2 = IOC
         allowed_modes = symbol_info.filling_mode
-        if allowed_modes & mt5.SYMBOL_FILLING_FOK:
-            filling_mode = mt5.ORDER_FILLING_FOK
-        elif allowed_modes & mt5.SYMBOL_FILLING_IOC:
+        if allowed_modes & 2:
             filling_mode = mt5.ORDER_FILLING_IOC
+        elif allowed_modes & 1:
+            filling_mode = mt5.ORDER_FILLING_FOK
         else:
             filling_mode = mt5.ORDER_FILLING_RETURN
 
@@ -380,10 +387,10 @@ class MT5DataClient:
 
             # Dynamically determine the supported filling mode for this specific asset
             allowed_modes = symbol_info.filling_mode
-            if allowed_modes & mt5.SYMBOL_FILLING_FOK:
-                filling_mode = mt5.ORDER_FILLING_FOK
-            elif allowed_modes & mt5.SYMBOL_FILLING_IOC:
+            if allowed_modes & 2:
                 filling_mode = mt5.ORDER_FILLING_IOC
+            elif allowed_modes & 1:
+                filling_mode = mt5.ORDER_FILLING_FOK
             else:
                 filling_mode = mt5.ORDER_FILLING_RETURN
 

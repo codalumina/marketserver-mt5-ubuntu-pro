@@ -257,6 +257,151 @@ class MT5DataClient:
             mt5.shutdown()
             self.connected = False
 
+    # ----------------------------------------------------------------------
+    # Trade Execution and Order Management Methods
+    # ----------------------------------------------------------------------
+
+    def get_open_positions(self, symbol=None):
+        """Retrieve open positions, optionally filtered by symbol."""
+        if not self.connected:
+            raise RuntimeError("MT5 terminal not connected")
+
+        if symbol:
+            positions = mt5.positions_get(symbol=symbol)
+        else:
+            positions = mt5.positions_get()
+
+        if positions is None:
+            return []
+
+        return [pos._asdict() for pos in positions]
+
+    def get_pending_orders(self, symbol=None):
+        """Retrieve pending orders, optionally filtered by symbol."""
+        if not self.connected:
+            raise RuntimeError("MT5 terminal not connected")
+
+        if symbol:
+            orders = mt5.orders_get(symbol=symbol)
+        else:
+            orders = mt5.orders_get()
+
+        if orders is None:
+            return []
+
+        return [order._asdict() for order in orders]
+
+    def execute_market_order(
+        self,
+        symbol: str,
+        volume: float,
+        order_type: int,
+        deviation: int = 20,
+        stop_loss: float = 0.0,
+        take_profit: float = 0.0,
+        magic: int = 1000,
+    ):
+        """
+        Executes a market BUY or SELL order.
+        order_type should be mt5.ORDER_TYPE_BUY or mt5.ORDER_TYPE_SELL
+        """
+        if not self.connected:
+            raise RuntimeError("MT5 terminal not connected")
+
+        # Select symbol to ensure prices are available
+        mt5.symbol_select(symbol, True)
+        symbol_info = mt5.symbol_info(symbol)
+        if symbol_info is None:
+            raise ValueError(
+                f"Symbol {symbol} not found or not visible in Market Watch"
+            )
+
+        # Determine price based on order type
+        price = (
+            mt5.symbol_info_tick(symbol).ask
+            if order_type == mt5.ORDER_TYPE_BUY
+            else mt5.symbol_info_tick(symbol).bid
+        )
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": float(volume),
+            "type": order_type,
+            "price": price,
+            "sl": float(stop_loss),
+            "tp": float(take_profit),
+            "deviation": deviation,
+            "magic": magic,
+            "comment": "MarketDash Pro",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_IOC,  # Using IOC (Immediate or Cancel) as a generally safe default
+        }
+
+        # Send the order
+        result = mt5.order_send(request)
+
+        if result is None:
+            raise RuntimeError(f"Order send failed. MT5 error: {mt5.last_error()}")
+
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            raise RuntimeError(
+                f"Order execution rejected. Retcode: {result.retcode}, Comment: {result.comment}"
+            )
+
+        return result._asdict()
+
+    def flatten_all_positions(self):
+        """Emergency method to close all open positions across all symbols."""
+        positions = self.get_open_positions()
+        results = []
+        errors = []
+
+        for pos in positions:
+            symbol = pos["symbol"]
+            volume = pos["volume"]
+            pos_type = pos["type"]
+            ticket = pos["ticket"]
+
+            # Opposite order type to close
+            close_type = (
+                mt5.ORDER_TYPE_SELL
+                if pos_type == mt5.POSITION_TYPE_BUY
+                else mt5.ORDER_TYPE_BUY
+            )
+            price = (
+                mt5.symbol_info_tick(symbol).bid
+                if close_type == mt5.ORDER_TYPE_SELL
+                else mt5.symbol_info_tick(symbol).ask
+            )
+
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": symbol,
+                "volume": volume,
+                "type": close_type,
+                "position": ticket,
+                "price": price,
+                "deviation": 20,
+                "magic": 1000,
+                "comment": "MarketDash Panic Close",
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+
+            result = mt5.order_send(request)
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                results.append(result._asdict())
+            else:
+                errors.append(
+                    {
+                        "ticket": ticket,
+                        "error": result.comment if result else mt5.last_error(),
+                    }
+                )
+
+        return {"closed": results, "failed": errors}
+
     def __repr__(self):
         return f"MT5DataClient(login={self.login}, server={self.server}, connected={self.connected}, authorised={self.authorised}, timezone={self.timezone})"
 

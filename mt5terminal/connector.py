@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
@@ -458,11 +458,9 @@ class MT5DataClient:
         if not self.connected:
             raise RuntimeError("MT5 terminal not connected")
 
-        from datetime import datetime, timedelta
-
         # MT5 expects naive datetimes representing UTC for its history queries
-        date_to = datetime.now(timezone.utc).replace(tzinfo=None)  # noqa: UP017
-        date_from = date_to - timedelta(days=days)
+        date_to = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=1)  # noqa: UP017
+        date_from = date_to - timedelta(days=days + 1)
 
         deals = mt5.history_deals_get(date_from, date_to)
         if deals is None:

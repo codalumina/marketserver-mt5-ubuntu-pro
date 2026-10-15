@@ -483,3 +483,32 @@ def trade_history(request):
     finally:
         if client:
             client.shutdown()
+
+
+@api_view(["POST"])
+def close_position(request):
+    """Close a specific open position by its ticket ID."""
+    client = None
+    try:
+        ticket = request.data.get("ticket")
+        if not ticket:
+            return Response(
+                {"error": "Missing required field: 'ticket'"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        client = MT5DataClient()
+        result = client.close_position(int(ticket))
+
+        return Response(
+            {"status": "success", "details": result}, status=status.HTTP_200_OK
+        )
+    except ValueError as e:
+        return Response({"error": str(e)}, status=status.HTTP_404_NOT_FOUND)
+    except RuntimeError as e:
+        return Response({"error": str(e)}, status=status.HTTP_406_NOT_ACCEPTABLE)
+    except Exception as e:  # noqa: BLE001
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if client:
+            client.shutdown()

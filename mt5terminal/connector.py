@@ -384,6 +384,71 @@ class MT5DataClient:
 
         return result._asdict()
 
+    def close_position(self, ticket: int):
+        """Close a specific open position by its ticket ID."""
+        if not self.connected:
+            raise RuntimeError("MT5 terminal not connected")
+
+        # Get the specific position
+        positions = mt5.positions_get(ticket=ticket)
+        if positions is None or len(positions) == 0:
+            raise ValueError(f"Position with ticket #{ticket} not found.")
+
+        pos = positions[0]._asdict()
+        symbol = pos["symbol"]
+        volume = pos["volume"]
+        pos_type = pos["type"]
+
+        mt5.symbol_select(symbol, True)
+        symbol_info = mt5.symbol_info(symbol)
+        if symbol_info is None:
+            raise ValueError(f"Symbol {symbol} info unavailable")
+
+        # Dynamically determine the supported filling mode
+        allowed_modes = symbol_info.filling_mode
+        if allowed_modes & 2:
+            filling_mode = mt5.ORDER_FILLING_IOC
+        elif allowed_modes & 1:
+            filling_mode = mt5.ORDER_FILLING_FOK
+        else:
+            filling_mode = mt5.ORDER_FILLING_RETURN
+
+        # Opposite order type to close
+        close_type = (
+            mt5.ORDER_TYPE_SELL
+            if pos_type == mt5.POSITION_TYPE_BUY
+            else mt5.ORDER_TYPE_BUY
+        )
+        price = (
+            mt5.symbol_info_tick(symbol).bid
+            if close_type == mt5.ORDER_TYPE_SELL
+            else mt5.symbol_info_tick(symbol).ask
+        )
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": volume,
+            "type": close_type,
+            "position": ticket,
+            "price": price,
+            "deviation": 20,
+            "magic": 1000,
+            "comment": "MarketDash Manual Close",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": filling_mode,
+        }
+
+        result = mt5.order_send(request)
+        if result is None:
+            raise RuntimeError(f"Order send failed. MT5 error: {mt5.last_error()}")
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            raise RuntimeError(
+                f"Order rejected. Retcode: {result.retcode}, Comment: {result.comment}"
+            )
+
+        return result._asdict()
+
     def flatten_all_positions(self):
         """Emergency method to close all open positions across all symbols."""
         positions = self.get_open_positions()

@@ -2,7 +2,7 @@ import csv
 import os
 import platform
 import shutil
-from datetime import datetime, timezone, UTC
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -362,7 +362,7 @@ def open_positions(request):
             {
                 "count": len(positions),
                 "positions": positions,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),  # noqa: UP017
             },
             status=status.HTTP_200_OK,
         )

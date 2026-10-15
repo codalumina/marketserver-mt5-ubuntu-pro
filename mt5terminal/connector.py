@@ -301,14 +301,9 @@ class MT5DataClient:
         take_profit: float = 0.0,
         magic: int = 1000,
     ):
-        """
-        Executes a market BUY or SELL order.
-        order_type should be mt5.ORDER_TYPE_BUY or mt5.ORDER_TYPE_SELL
-        """
         if not self.connected:
             raise RuntimeError("MT5 terminal not connected")
 
-        # Select symbol to ensure prices are available
         mt5.symbol_select(symbol, True)
         symbol_info = mt5.symbol_info(symbol)
         if symbol_info is None:
@@ -316,7 +311,21 @@ class MT5DataClient:
                 f"Symbol {symbol} not found or not visible in Market Watch"
             )
 
-        # Determine price based on order type
+        # 1. Normalize Volume (AAPL needs 1.0, Forex needs 0.01)
+        v_min = symbol_info.volume_min
+        v_step = symbol_info.volume_step
+        # Round the requested volume to the nearest allowed step
+        normalized_volume = max(v_min, round(float(volume) / v_step) * v_step)
+
+        # 2. Dynamically determine the supported filling mode
+        allowed_modes = symbol_info.filling_mode
+        if allowed_modes & mt5.SYMBOL_FILLING_FOK:
+            filling_mode = mt5.ORDER_FILLING_FOK
+        elif allowed_modes & mt5.SYMBOL_FILLING_IOC:
+            filling_mode = mt5.ORDER_FILLING_IOC
+        else:
+            filling_mode = mt5.ORDER_FILLING_RETURN
+
         price = (
             mt5.symbol_info_tick(symbol).ask
             if order_type == mt5.ORDER_TYPE_BUY
@@ -326,7 +335,7 @@ class MT5DataClient:
         request = {
             "action": mt5.TRADE_ACTION_DEAL,
             "symbol": symbol,
-            "volume": float(volume),
+            "volume": float(normalized_volume),
             "type": order_type,
             "price": price,
             "sl": float(stop_loss),
@@ -335,18 +344,15 @@ class MT5DataClient:
             "magic": magic,
             "comment": "MarketDash Pro",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,  # Using IOC (Immediate or Cancel) as a generally safe default
+            "type_filling": filling_mode,
         }
 
-        # Send the order
         result = mt5.order_send(request)
-
         if result is None:
             raise RuntimeError(f"Order send failed. MT5 error: {mt5.last_error()}")
-
         if result.retcode != mt5.TRADE_RETCODE_DONE:
             raise RuntimeError(
-                f"Order execution rejected. Retcode: {result.retcode}, Comment: {result.comment}"
+                f"Order rejected. Retcode: {result.retcode}, Comment: {result.comment}"
             )
 
         return result._asdict()
@@ -362,6 +368,24 @@ class MT5DataClient:
             volume = pos["volume"]
             pos_type = pos["type"]
             ticket = pos["ticket"]
+
+            # Make sure symbol info is accessible for filling mode and prices
+            mt5.symbol_select(symbol, True)
+            symbol_info = mt5.symbol_info(symbol)
+            if symbol_info is None:
+                errors.append(
+                    {"ticket": ticket, "error": f"Symbol {symbol} info unavailable"}
+                )
+                continue
+
+            # Dynamically determine the supported filling mode for this specific asset
+            allowed_modes = symbol_info.filling_mode
+            if allowed_modes & mt5.SYMBOL_FILLING_FOK:
+                filling_mode = mt5.ORDER_FILLING_FOK
+            elif allowed_modes & mt5.SYMBOL_FILLING_IOC:
+                filling_mode = mt5.ORDER_FILLING_IOC
+            else:
+                filling_mode = mt5.ORDER_FILLING_RETURN
 
             # Opposite order type to close
             close_type = (
@@ -386,7 +410,7 @@ class MT5DataClient:
                 "magic": 1000,
                 "comment": "MarketDash Panic Close",
                 "type_time": mt5.ORDER_TIME_GTC,
-                "type_filling": mt5.ORDER_FILLING_IOC,
+                "type_filling": filling_mode,
             }
 
             result = mt5.order_send(request)
@@ -396,7 +420,7 @@ class MT5DataClient:
                 errors.append(
                     {
                         "ticket": ticket,
-                        "error": result.comment if result else mt5.last_error(),
+                        "error": result.comment if result else str(mt5.last_error()),
                     }
                 )
 

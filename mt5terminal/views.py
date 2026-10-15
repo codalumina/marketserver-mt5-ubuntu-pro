@@ -220,7 +220,18 @@ def all_symbols(request):
         client = MT5DataClient()
         symbols = client.get_all_symbols()
 
-        fields = ["name", "description", "exchange", "isin", "digits", "point"]
+        fields = [
+            "name",
+            "description",
+            "exchange",
+            "isin",
+            "digits",
+            "point",
+            "volume_min",
+            "volume_step",
+            "volume_max",
+            "trade_contract_size",
+        ]
         data = []
 
         for sym in symbols:

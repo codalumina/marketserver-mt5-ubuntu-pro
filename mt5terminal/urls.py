@@ -10,8 +10,9 @@ urlpatterns = [
     path("symbols/all/", views.all_symbols, name="all_symbols"),
     # Calendar
     path("calendar/", views.economic_calendar, name="economic_calendar"),
-    # Execution routes
+    # Trade Management routes
     path("trade/positions/", views.open_positions, name="open_positions"),
     path("trade/execute/", views.execute_trade, name="execute_trade"),
     path("trade/flatten/", views.flatten_positions, name="flatten_positions"),
+    path("trade/history/", views.trade_history, name="trade_history"),
 ]

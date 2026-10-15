@@ -451,3 +451,35 @@ def flatten_positions(request):
     finally:
         if client:
             client.shutdown()
+
+
+@api_view(["GET"])
+def trade_history(request):
+    """Retrieve closed trades history and net PnL."""
+    client = None
+    try:
+        days = int(request.query_params.get("days", 30))
+        client = MT5DataClient()
+        history = client.get_trade_history(days=days)
+
+        # Calculate summary metrics
+        total_profit = sum(d.get("profit", 0.0) for d in history)
+        total_swap = sum(d.get("swap", 0.0) for d in history)
+        total_commission = sum(d.get("commission", 0.0) for d in history)
+        net_pnl = total_profit + total_swap + total_commission
+
+        return Response(
+            {
+                "count": len(history),
+                "net_pnl": net_pnl,
+                "total_commission": total_commission,
+                "deals": history,
+                "timestamp": datetime.now(timezone.utc).isoformat(),  # noqa: UP017
+            },
+            status=status.HTTP_200_OK,
+        )
+    except Exception as e:  # noqa: BLE001
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if client:
+            client.shutdown()

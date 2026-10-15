@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
@@ -452,6 +452,32 @@ class MT5DataClient:
                 )
 
         return {"closed": results, "failed": errors}
+
+    def get_trade_history(self, days=30):
+        """Retrieve closed trades (deals) from the last X days."""
+        if not self.connected:
+            raise RuntimeError("MT5 terminal not connected")
+
+        from datetime import datetime, timedelta
+
+        # MT5 expects naive datetimes representing UTC for its history queries
+        date_to = datetime.now(timezone.utc).replace(tzinfo=None)  # noqa: UP017
+        date_from = date_to - timedelta(days=days)
+
+        deals = mt5.history_deals_get(date_from, date_to)
+        if deals is None:
+            return []
+
+        history = []
+        for deal in deals:
+            d_dict = deal._asdict()
+            # We only want deals that CLOSED a position (Entry Out or InOut)
+            if d_dict.get("entry") in [mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_INOUT]:
+                history.append(d_dict)
+
+        # Sort by time descending (newest first)
+        history.sort(key=lambda x: x["time"], reverse=True)
+        return history
 
     def __repr__(self):
         return f"MT5DataClient(login={self.login}, server={self.server}, connected={self.connected}, authorised={self.authorised}, timezone={self.timezone})"

@@ -213,6 +213,84 @@ def recent_price_action(request):
 
 
 @api_view(["GET"])
+def historical_price_range(request):
+    """Retrieve historical OHLC data for a strict date range (Quant Data Builder)."""
+    client = None
+    try:
+        symbol = request.query_params.get("symbol")
+        timeframe_str = request.query_params.get("timeframe")
+        start_date_str = request.query_params.get("start_date")
+        end_date_str = request.query_params.get("end_date")
+
+        if not all([symbol, timeframe_str, start_date_str, end_date_str]):
+            return Response(
+                {
+                    "error": "Missing required parameters: symbol, timeframe, start_date, end_date"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Parse ISO 8601 strings to python datetime objects
+        start_dt = datetime.fromisoformat(start_date_str.replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+
+        client = MT5DataClient()
+        tf_map = client.timeframes
+        tf_constant = tf_map.get(timeframe_str.upper())
+
+        if tf_constant is None:
+            return Response(
+                {"error": f"Invalid timeframe. Valid options: {list(tf_map.keys())}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        price_action = client.get_ohlc_range(
+            symbol_name=symbol,
+            timeframe=tf_constant,
+            from_date=start_dt,
+            to_date=end_dt,
+        )
+
+        for ohlc in price_action:
+            # 1. Read MT5 timestamp exactly as emitted
+            naive_dt = datetime.fromtimestamp(ohlc["time"], tz=timezone.utc).replace(
+                tzinfo=None
+            )
+            # 2. Assign the actual Broker Timezone
+            broker_aware_dt = naive_dt.replace(tzinfo=BROKER_TZ)
+            # 3. Convert safely to true UTC
+            utc_dt = broker_aware_dt.astimezone(timezone.utc)
+
+            ohlc["time"] = int(utc_dt.timestamp())
+            ohlc["iso_time"] = utc_dt.isoformat()
+
+        return Response(
+            {
+                "symbol": symbol,
+                "timeframe": timeframe_str.upper(),
+                "count": len(price_action),
+                "price_action": price_action,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    except ValueError as e:
+        return Response(
+            {"error": f"Invalid input or no data available: {str(e)}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    except Exception as e:
+        return Response(
+            {"error": f"Unexpected error: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    finally:
+        if client is not None:
+            client.shutdown()
+
+
+@api_view(["GET"])
 def all_symbols(request):
     """Retrieve detailed metadata for all available trading symbols."""
     client = None

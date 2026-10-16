@@ -7,6 +7,7 @@ urlpatterns = [
     path("stat/", views.server_stat, name="server_stat"),
     # Market and price action
     path("recent/", views.recent_price_action, name="recent_price_action"),
+    path("historical/", views.historical_price_range, name="historical_price_range"),
     path("symbols/all/", views.all_symbols, name="all_symbols"),
     # Calendar
     path("calendar/", views.economic_calendar, name="economic_calendar"),

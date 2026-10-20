@@ -606,6 +606,9 @@ def market_movers(request):
             if not sym_name:
                 continue
 
+            # Force MT5 to activate the symbol in Market Watch before querying
+            mt5.symbol_select(sym_name, True)
+
             # Fetch 1 D1 candle directly from MT5 memory (extremely fast locally)
             rates = mt5.copy_rates_from_pos(sym_name, mt5.TIMEFRAME_D1, 0, 1)
             if rates is not None and len(rates) > 0:

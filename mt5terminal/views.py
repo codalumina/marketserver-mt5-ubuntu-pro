@@ -606,10 +606,10 @@ def market_movers(request):
             if not sym_name:
                 continue
 
-            # Force MT5 to activate the symbol in Market Watch before querying
+            # 1. Activate the symbol in Market Watch
             mt5.symbol_select(sym_name, True)
 
-            # Fetch 1 D1 candle directly from MT5 memory (extremely fast locally)
+            # 2. Fetch 1 D1 candle
             rates = mt5.copy_rates_from_pos(sym_name, mt5.TIMEFRAME_D1, 0, 1)
             if rates is not None and len(rates) > 0:
                 candle = rates[0]
@@ -620,6 +620,9 @@ def market_movers(request):
                         "close": float(candle["close"]),
                     }
                 )
+
+            # 3. CRITICAL: Hide the symbol to prevent hitting MT5's 1000-symbol limit
+            mt5.symbol_select(sym_name, False)
 
         return Response(
             {"status": "success", "movers": movers}, status=status.HTTP_200_OK

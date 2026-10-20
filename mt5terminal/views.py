@@ -594,23 +594,26 @@ def close_position(request):
 
 @api_view(["GET"])
 def market_movers(request):
-    """Bulk endpoint to fetch today's D1 open and close for ALL symbols instantly."""
+    """Bulk endpoint to fetch daily D1 open/close for targeted symbols."""
     client = None
     try:
+        # Read comma-separated symbols from query params if provided
+        symbols_param = request.query_params.get("symbols")
+
         client = MT5DataClient()
-        symbols = client.get_all_symbols()
+
+        if symbols_param:
+            target_symbols = [s.strip() for s in symbols_param.split(",") if s.strip()]
+        else:
+            all_syms = client.get_all_symbols()
+            target_symbols = [s.get("name") for s in all_syms if s.get("name")]
 
         movers = []
-        for sym_data in symbols:
-            sym_name = sym_data.get("name")
-            if not sym_name:
-                continue
-
-            # 1. Activate the symbol in Market Watch
+        for sym_name in target_symbols:
+            # Activate, query, and release
             mt5.symbol_select(sym_name, True)
-
-            # 2. Fetch 1 D1 candle
             rates = mt5.copy_rates_from_pos(sym_name, mt5.TIMEFRAME_D1, 0, 1)
+
             if rates is not None and len(rates) > 0:
                 candle = rates[0]
                 movers.append(
@@ -620,9 +623,6 @@ def market_movers(request):
                         "close": float(candle["close"]),
                     }
                 )
-
-            # 3. CRITICAL: Hide the symbol to prevent hitting MT5's 1000-symbol limit
-            mt5.symbol_select(sym_name, False)
 
         return Response(
             {"status": "success", "movers": movers}, status=status.HTTP_200_OK

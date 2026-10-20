@@ -665,8 +665,10 @@ def bulk_recent_price_action(request):
 
         data_matrix = {}
         for sym in target_symbols:
+            # 1. Activate symbol
             mt5.symbol_select(sym, True)
             data_matrix[sym] = {}
+
             for tf_str in target_tfs:
                 tf_constant = tf_map.get(tf_str)
                 if tf_constant is None:
@@ -675,6 +677,11 @@ def bulk_recent_price_action(request):
                 price_action = client.get_ohlc_from_pos(
                     symbol_name=sym, start_pos=0, count=count, timeframe=tf_constant
                 )
+
+                # TRAP: If MT5 returns None for missing history, default to empty list and skip processing
+                if not price_action:
+                    data_matrix[sym][tf_str] = []
+                    continue
 
                 for ohlc in price_action:
                     naive_dt = datetime.fromtimestamp(
@@ -686,6 +693,9 @@ def bulk_recent_price_action(request):
                     ohlc["iso_time"] = utc_dt.isoformat()
 
                 data_matrix[sym][tf_str] = price_action
+
+            # 2. Release symbol to prevent MT5 Market Watch bloat/freezing
+            mt5.symbol_select(sym, False)
 
         return Response(
             {

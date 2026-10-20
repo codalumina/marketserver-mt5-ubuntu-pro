@@ -590,3 +590,39 @@ def close_position(request):
     finally:
         if client:
             client.shutdown()
+
+
+@api_view(["GET"])
+def market_movers(request):
+    """Bulk endpoint to fetch today's D1 open and close for ALL symbols instantly."""
+    client = None
+    try:
+        client = MT5DataClient()
+        symbols = client.get_all_symbols()
+
+        movers = []
+        for sym_data in symbols:
+            sym_name = sym_data.get("name")
+            if not sym_name:
+                continue
+
+            # Fetch 1 D1 candle directly from MT5 memory (extremely fast locally)
+            rates = mt5.copy_rates_from_pos(sym_name, mt5.TIMEFRAME_D1, 0, 1)
+            if rates is not None and len(rates) > 0:
+                candle = rates[0]
+                movers.append(
+                    {
+                        "symbol": sym_name,
+                        "open": float(candle["open"]),
+                        "close": float(candle["close"]),
+                    }
+                )
+
+        return Response(
+            {"status": "success", "movers": movers}, status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    finally:
+        if client:
+            client.shutdown()

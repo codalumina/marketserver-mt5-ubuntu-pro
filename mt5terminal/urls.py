@@ -17,4 +17,6 @@ urlpatterns = [
     path("trade/close/", views.close_position, name="close_position"),
     path("trade/flatten/", views.flatten_positions, name="flatten_positions"),
     path("trade/history/", views.trade_history, name="trade_history"),
+    # Market Movers
+    path("movers/", views.market_movers, name="market_movers"),
 ]

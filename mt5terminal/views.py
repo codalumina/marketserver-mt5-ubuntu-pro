@@ -642,10 +642,10 @@ def bulk_recent_price_action(request):
         symbols_param = request.query_params.get("symbols")
         timeframes_param = request.query_params.get("timeframes", "H1,H4,D1,W1,MN1")
         try:
-            count = int(request.query_params.get("count", 50))
+            base_count = int(request.query_params.get("count", 80))
         except ValueError:
             return Response(
-                {"error": "'count' parameter must be an integer"},
+                {"error": "'count' must be an integer"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -665,7 +665,6 @@ def bulk_recent_price_action(request):
 
         data_matrix = {}
         for sym in target_symbols:
-            # 1. Activate symbol
             mt5.symbol_select(sym, True)
             data_matrix[sym] = {}
 
@@ -674,10 +673,15 @@ def bulk_recent_price_action(request):
                 if tf_constant is None:
                     continue
 
-                # TRAP: Catch the ValueError thrown by MT5DataClient when history is missing
+                # DYNAMIC LIMIT: Prevent MT5 from freezing on deep W1/MN1 history downloads
+                tf_count = 5 if tf_str in ["W1", "MN1"] else base_count
+
                 try:
                     price_action = client.get_ohlc_from_pos(
-                        symbol_name=sym, start_pos=0, count=count, timeframe=tf_constant
+                        symbol_name=sym,
+                        start_pos=0,
+                        count=tf_count,
+                        timeframe=tf_constant,
                     )
                 except ValueError:
                     data_matrix[sym][tf_str] = []
@@ -698,12 +702,11 @@ def bulk_recent_price_action(request):
 
                 data_matrix[sym][tf_str] = price_action
 
-            # 2. Release symbol to prevent MT5 Market Watch bloat
             mt5.symbol_select(sym, False)
 
         return Response(
             {
-                "count_requested": count,
+                "count_requested": base_count,
                 "symbols": target_symbols,
                 "timeframes": target_tfs,
                 "data": data_matrix,

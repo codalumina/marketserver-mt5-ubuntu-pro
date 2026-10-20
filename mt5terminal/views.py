@@ -674,11 +674,15 @@ def bulk_recent_price_action(request):
                 if tf_constant is None:
                     continue
 
-                price_action = client.get_ohlc_from_pos(
-                    symbol_name=sym, start_pos=0, count=count, timeframe=tf_constant
-                )
+                # TRAP: Catch the ValueError thrown by MT5DataClient when history is missing
+                try:
+                    price_action = client.get_ohlc_from_pos(
+                        symbol_name=sym, start_pos=0, count=count, timeframe=tf_constant
+                    )
+                except ValueError:
+                    data_matrix[sym][tf_str] = []
+                    continue
 
-                # TRAP: If MT5 returns None for missing history, default to empty list and skip processing
                 if not price_action:
                     data_matrix[sym][tf_str] = []
                     continue
@@ -694,7 +698,7 @@ def bulk_recent_price_action(request):
 
                 data_matrix[sym][tf_str] = price_action
 
-            # 2. Release symbol to prevent MT5 Market Watch bloat/freezing
+            # 2. Release symbol to prevent MT5 Market Watch bloat
             mt5.symbol_select(sym, False)
 
         return Response(

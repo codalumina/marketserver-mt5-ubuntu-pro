@@ -19,4 +19,8 @@ urlpatterns = [
     path("trade/history/", views.trade_history, name="trade_history"),
     # Market Movers
     path("movers/", views.market_movers, name="market_movers"),
+    # Bulk Recent Price Action for MTF Rating Engine
+    path(
+        "recent/bulk/", views.bulk_recent_price_action, name="bulk_recent_price_action"
+    ),
 ]

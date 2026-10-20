@@ -632,3 +632,77 @@ def market_movers(request):
     finally:
         if client:
             client.shutdown()
+
+
+@api_view(["GET"])
+def bulk_recent_price_action(request):
+    """Retrieve historical OHLC candles concurrently for multiple symbols and timeframes."""
+    client = None
+    try:
+        symbols_param = request.query_params.get("symbols")
+        timeframes_param = request.query_params.get("timeframes", "H1,H4,D1,W1,MN1")
+        try:
+            count = int(request.query_params.get("count", 50))
+        except ValueError:
+            return Response(
+                {"error": "'count' parameter must be an integer"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not symbols_param:
+            return Response(
+                {"error": "Missing required parameter: symbols"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_symbols = [s.strip() for s in symbols_param.split(",") if s.strip()]
+        target_tfs = [
+            tf.strip().upper() for tf in timeframes_param.split(",") if tf.strip()
+        ]
+
+        client = MT5DataClient()
+        tf_map = client.timeframes
+
+        data_matrix = {}
+        for sym in target_symbols:
+            mt5.symbol_select(sym, True)
+            data_matrix[sym] = {}
+            for tf_str in target_tfs:
+                tf_constant = tf_map.get(tf_str)
+                if tf_constant is None:
+                    continue
+
+                price_action = client.get_ohlc_from_pos(
+                    symbol_name=sym, start_pos=0, count=count, timeframe=tf_constant
+                )
+
+                for ohlc in price_action:
+                    naive_dt = datetime.fromtimestamp(
+                        ohlc["time"], tz=timezone.utc
+                    ).replace(tzinfo=None)
+                    broker_aware_dt = naive_dt.replace(tzinfo=BROKER_TZ)
+                    utc_dt = broker_aware_dt.astimezone(timezone.utc)
+                    ohlc["time"] = int(utc_dt.timestamp())
+                    ohlc["iso_time"] = utc_dt.isoformat()
+
+                data_matrix[sym][tf_str] = price_action
+
+        return Response(
+            {
+                "count_requested": count,
+                "symbols": target_symbols,
+                "timeframes": target_tfs,
+                "data": data_matrix,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    except Exception as e:
+        return Response(
+            {"error": f"Unexpected error: {str(e)}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    finally:
+        if client is not None:
+            client.shutdown()
